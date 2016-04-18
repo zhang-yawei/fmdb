@@ -150,6 +150,7 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
 
  */
 
+//初始化 FMDBBase  此时没有创建数据库
 + (instancetype)databaseWithPath:(NSString*)inPath;
 
 /** Initialize a `FMDatabase` object.
@@ -196,6 +197,8 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
  @see close
  */
 
+// 打开数据库,设置 sqlite3_bugy-handle
+
 - (BOOL)open;
 
 /** Opening a new database connection with flags and an optional virtual file system (VFS)
@@ -236,6 +239,9 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
  @see open
  @see openWithFlags:
  */
+
+
+
 
 - (BOOL)close;
 

@@ -121,7 +121,7 @@ Database Creation
  
  Transactions
  
- //   FMDatabase 能够用一个恰当的方法 开始 和 完成一个操作,或者执行开始\结束语句
+ //   FMDatabase 能够用一个恰当的方法 开始 和 完成一个事务,或者执行开始\结束语句
  FMDatabase can begin and commit a transaction by invoking one of the appropriate methods or executing a begin/end transaction statement.
  
  Multiple Statements and Batch Stuff

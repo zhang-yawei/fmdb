@@ -19,6 +19,7 @@
 #pragma mark FMDatabase instantiation and deallocation
 
 + (instancetype)databaseWithPath:(NSString*)aPath {
+    // 非arc的环境下,autorelease
     return FMDBReturnAutoreleased([[self alloc] initWithPath:aPath]);
 }
 
@@ -28,6 +29,9 @@
 
 - (instancetype)initWithPath:(NSString*)aPath {
     
+//     9、SQLite线程安全吗？
+//    线程是魔鬼（Threads are evil）。避免使用它们。
+//    SQLite是线程安全的。由于很多用户会忽略我们在上一段中给出的建议，我们做出了这种让步。但是，为了达到线程安全，SQLite在编译时必须将SQLITE_THREADSAFE预处理宏置为1。在Windows和Linux上，已编译的好的二进制发行版中都是这样设置的。如果不确定你所使用的库是否是线程安全的，可以调用sqlite3_threadsafe()接口找出。
     assert(sqlite3_threadsafe()); // whoa there big boy- gotta make sure sqlite it happy with what we're going to do.
     
     self = [super init];
@@ -157,6 +161,7 @@
     if (_db) {
         return YES;
     }
+// flags：作为数据库连接的额外控制的参数，可以是SQLITE_OPEN_READONLY，SQLITE_OPEN_READWRITE和SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE中的一个，用于控制数据库的打开方式，可以和SQLITE_OPEN_NOMUTEX，SQLITE_OPEN_FULLMUTEX， SQLITE_OPEN_SHAREDCACHE，以及SQLITE_OPEN_PRIVATECACHE结合使用，具体的详细情况可以查阅文档
 
     int err = sqlite3_open_v2([self sqlitePath], &_db, flags, [vfsName UTF8String]);
     if(err != SQLITE_OK) {
@@ -182,7 +187,6 @@
     if (!_db) {
         return YES;
     }
-    
     int  rc;
     BOOL retry;
     BOOL triedFinalizingOpenStatements = NO;
@@ -226,7 +230,9 @@
 static int FMDBDatabaseBusyHandler(void *f, int count) {
     FMDatabase *self = (__bridge FMDatabase*)f;
     
+
     if (count == 0) {
+        // ->访问链表的末端,取到指针.
         self->_startBusyRetryTime = [NSDate timeIntervalSinceReferenceDate];
         return 1;
     }
@@ -235,6 +241,7 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
     
     if (delta < [self maxBusyRetryTimeInterval]) {
         int requestedSleepInMillseconds = (int) arc4random_uniform(50) + 50;
+        
         int actualSleepInMilliseconds = sqlite3_sleep(requestedSleepInMillseconds);
         if (actualSleepInMilliseconds != requestedSleepInMillseconds) {
             NSLog(@"WARNING: Requested sleep of %i milliseconds, but SQLite returned %i. Maybe SQLite wasn't built with HAVE_USLEEP=1?", requestedSleepInMillseconds, actualSleepInMilliseconds);
@@ -254,6 +261,8 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
     }
     
     if (timeout > 0) {
+        // 操作数据库,如果有其他进程在操纵数据库,回掉函数返回非0 的时候,尝试不断操作数据库,直到其他线程或者进程释放锁. 获得锁后,不再调用回调函数,直接进行下一步操作.
+//        如果回调函数返回０时，将不再尝试再次访问数据库而返回SQLITE_BUSY或者SQLITE_IOERR_BLOCKED。
         sqlite3_busy_handler(_db, &FMDBDatabaseBusyHandler, (__bridge void *)(self));
     }
     else {
