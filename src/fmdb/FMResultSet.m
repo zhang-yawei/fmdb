@@ -58,6 +58,7 @@
     return sqlite3_column_count([_statement statement]);
 }
 
+// 在查询结果里,返回列名做key, nnumber做value的字典
 - (NSMutableDictionary *)columnNameToIndexMap {
     if (!_columnNameToIndexMap) {
         int columnCount = sqlite3_column_count([_statement statement]);

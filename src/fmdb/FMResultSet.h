@@ -29,7 +29,7 @@
 
 @interface FMResultSet : NSObject {
     FMDatabase          *_parentDB;
-    FMStatement         *_statement;
+    FMStatement         *_statement; 
     
     NSString            *_query;
     NSMutableDictionary *_columnNameToIndexMap;
@@ -85,6 +85,9 @@
  @see hasAnotherRow
  */
 
+
+
+// sqlite3_setp
 - (BOOL)next;
 
 /** Retrieve next row for result set.
@@ -120,6 +123,8 @@
  @return Integer value of the number of columns.
  */
 
+
+// 查询到的行数
 - (int)columnCount;
 
 /** Column index for column name
@@ -129,6 +134,7 @@
  @return Zero-based index for column.
  */
 
+//
 - (int)columnIndexForName:(NSString*)columnName;
 
 /** Column name for column index
@@ -137,6 +143,8 @@
 
  @return columnName `NSString` value of the name of the column.
  */
+
+// 根据index返回列名
 
 - (NSString*)columnNameForIndex:(int)columnIdx;
 

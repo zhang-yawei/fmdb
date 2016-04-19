@@ -28,6 +28,8 @@ type ret = [resultSet sel:0];                                        \
 return ret;
 
 
+
+
 - (NSString*)stringForQuery:(NSString*)query, ... {
     RETURN_RESULT_FOR_QUERY_WITH_SELECTOR(NSString *, stringForColumnIndex);
 }

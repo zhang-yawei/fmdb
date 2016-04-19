@@ -133,6 +133,9 @@
 
 #pragma mark Open and close database
 
+//在使用SQlite Library之前，首先应该调用sqlite3_initialize函数，该函数将分配资源，初始化一些必要的数据结构。与之配合使用的另一个函数是sqlite3_shutdown，该函数用来释放由sqlite3_initialize分配的资源。不过在很多客户的应用程序中通常直接调用sqlite3_open或者另一些主要的API函数，这些函数会自动初始化SQlite library（如果它还没有被初始化的话）。不过还是推荐客户应用程序显示调用这两个APIs函数来完成SQlite library的初始化和最后的清理工作。
+
+
 - (BOOL)open {
     if (_db) {
         return YES;
@@ -180,7 +183,7 @@
 
 
 - (BOOL)close {
-    
+    // 对_cachedStatements里的个集合,每个对象发 close.清空_cachedStatements
     [self clearCachedStatements];
     [self closeOpenResultSets];
     
@@ -263,6 +266,7 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
     if (timeout > 0) {
         // 操作数据库,如果有其他进程在操纵数据库,回掉函数返回非0 的时候,尝试不断操作数据库,直到其他线程或者进程释放锁. 获得锁后,不再调用回调函数,直接进行下一步操作.
 //        如果回调函数返回０时，将不再尝试再次访问数据库而返回SQLITE_BUSY或者SQLITE_IOERR_BLOCKED。
+//        sqlite3_busy_timeout(_db, 20); 也可以这样写吧
         sqlite3_busy_handler(_db, &FMDBDatabaseBusyHandler, (__bridge void *)(self));
     }
     else {
@@ -270,6 +274,25 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
         sqlite3_busy_handler(_db, nil, nil);
     }
 }
+
+
+/**
+ *  SQLite有一个内置的基于定时器的busy handler，可以给这个busy handler设置一个以毫秒为单位的超时时间。在超时时间范围内，busy handler将继续重复尝试获取锁的操作。
+ 
+ int sqlite3_busy_timeout(sqlite3*, int ms);
+ 
+ 用来设置内置busy handler的超时时间，以毫秒为单位。如果给ms参数传递0或者负值，则内置的busy handler被清除。
+ 
+ 程序员也可以自己写busy handler，然后通过aqlite3_busy_handler函数进行设置。
+ 
+ int sqlite3_busy_handler(sqlite3*, int(*)(void*,int), void*);
+ 
+ 
+  需要注意的是：一个数据库连接仅仅可以拥有一个busy handler，不能同时设置自定义的busy handler并配置内置的基于定时器的busy handler。每次设置其中一种busy handler都将删除另一个busy handler。
+ 
+ 
+ */
+
 
 - (NSTimeInterval)maxBusyRetryTimeInterval {
     return _maxBusyRetryTimeInterval;
@@ -321,6 +344,7 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
 
 - (void)clearCachedStatements {
     
+    // 遍历字典的 object
     for (NSMutableSet *statements in [_cachedStatements objectEnumerator]) {
         [statements makeObjectsPerformSelector:@selector(close)];
     }
@@ -333,14 +357,15 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
     NSMutableSet* statements = [_cachedStatements objectForKey:query];
     
     return [[statements objectsPassingTest:^BOOL(FMStatement* statement, BOOL *stop) {
-        
+
+        // 返回满足该条件的任一对象
         *stop = ![statement inUse];
         return *stop;
         
     }] anyObject];
 }
 
-
+// 缓存 statement
 - (void)setCachedStatement:(FMStatement*)statement forQuery:(NSString*)query {
     
     query = [query copy]; // in case we got handed in a mutable string...
@@ -465,6 +490,7 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
 #endif
 }
 
+// database 是否存在
 - (BOOL)databaseExists {
     
     if (!_db) {
@@ -545,6 +571,7 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
 
 #pragma mark SQL manipulation
 
+// 给prepare后的sql语句,绑定值.根据不同值类型,调用不同函数去绑定.
 - (void)bindObject:(id)obj toColumn:(int)idx inStatement:(sqlite3_stmt*)pStmt {
     
     if ((!obj) || ((NSNull *)obj == [NSNull null])) {
@@ -623,6 +650,7 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
     unichar last = '\0';
     for (NSUInteger i = 0; i < length; ++i) {
         id arg = nil;
+        
         unichar current = [sql characterAtIndex:i];
         unichar add = current;
         if (last == '%') {
@@ -756,7 +784,7 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
     
     _isExecutingStatement = YES;
     
-    int rc                  = 0x00;
+    int rc                  = 0x00; // 这样和NULL是一样的吧?
     sqlite3_stmt *pStmt     = 0x00;
     FMStatement *statement  = 0x00;
     FMResultSet *rs         = 0x00;
@@ -932,7 +960,9 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
 
 - (BOOL)executeUpdate:(NSString*)sql error:(NSError**)outErr withArgumentsInArray:(NSArray*)arrayArgs orDictionary:(NSDictionary *)dictionaryArgs orVAList:(va_list)args {
     
+
     if (![self databaseExists]) {
+        // database 是否存在
         return NO;
     }
     
@@ -971,7 +1001,7 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
                 NSAssert(false, @"DB Error: %d \"%@\"", [self lastErrorCode], [self lastErrorMessage]);
                 abort();
             }
-            
+            // 析构掉 pstmt;
             sqlite3_finalize(pStmt);
             
             if (outErr) {
@@ -988,6 +1018,7 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
     int queryCount = sqlite3_bind_parameter_count(pStmt);
     
     // If dictionaryArgs is passed in, that means we are using sqlite's named parameter support
+    //
     if (dictionaryArgs) {
         
         for (NSString *dictionaryKey in [dictionaryArgs allKeys]) {
@@ -1069,7 +1100,7 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
         }
     }
     else if (SQLITE_MISUSE == rc) {
-        // uh oh.
+        // uh oh.    SQLITE_MISUSE代表API被误用。比如一条语句在sqlite3_step函数执行之后，没有被重置之前，再次给其绑定参数，这时bind函数就会返回SQLITE_MISUSE。
         if (_logsErrors) {
             NSLog(@"Error calling sqlite3_step (%d: %s) SQLITE_MISUSE", rc, sqlite3_errmsg(_db));
             NSLog(@"DB Query: %@", sql);
@@ -1087,6 +1118,7 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
         NSAssert(NO, @"A executeUpdate is being called with a query string '%@'", sql);
     }
     
+    // 缓存  stmt
     if (_shouldCacheStatements && !cachedStmt) {
         cachedStmt = [[FMStatement alloc] init];
         
@@ -1100,6 +1132,7 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
     int closeErrorCode;
     
     if (cachedStmt) {
+        // 更新缓存数目
         [cachedStmt setUseCount:[cachedStmt useCount] + 1];
         closeErrorCode = sqlite3_reset(pStmt);
     }
@@ -1107,6 +1140,7 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
         /* Finalize the virtual machine. This releases all memory and other
          ** resources allocated by the sqlite3_prepare() call above.
          */
+        // 如果没有缓存,就释放.
         closeErrorCode = sqlite3_finalize(pStmt);
     }
     
@@ -1148,13 +1182,15 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
     return [self executeUpdate:sql error:nil withArgumentsInArray:nil orDictionary:nil orVAList:args];
 }
 
+// 拼接形式的字符串,转化为 sql语句,再去执行.
+// 会更方便,但是对于程序员来说,用多了会忘记sql语句不???
 - (BOOL)executeUpdateWithFormat:(NSString*)format, ... {
     va_list args;
     va_start(args, format);
     
     NSMutableString *sql      = [NSMutableString stringWithCapacity:[format length]];
     NSMutableArray *arguments = [NSMutableArray array];
-    
+// 拼接sql语句
     [self extractSQL:format argumentsList:args intoString:sql arguments:arguments];    
     
     va_end(args);
@@ -1187,6 +1223,7 @@ int FMDBExecuteBulkSQLCallback(void *theBlockAsVoid, int columns, char **values,
     return [self executeStatements:sql withResultBlock:nil];
 }
 
+// block callback函数.
 - (BOOL)executeStatements:(NSString *)sql withResultBlock:(FMDBExecuteStatementsCallbackBlock)block {
     
     int rc;
@@ -1216,6 +1253,7 @@ int FMDBExecuteBulkSQLCallback(void *theBlockAsVoid, int columns, char **values,
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-implementations"
+// va_list 可变参数. http://jazka.blog.51cto.com/809003/232331/
 - (BOOL)update:(NSString*)sql withErrorAndBindings:(NSError**)outErr, ... {
     va_list args;
     va_start(args, outErr);
@@ -1230,6 +1268,7 @@ int FMDBExecuteBulkSQLCallback(void *theBlockAsVoid, int columns, char **values,
 
 #pragma mark Transactions
 
+// 回退事务
 - (BOOL)rollback {
     BOOL b = [self executeUpdate:@"rollback transaction"];
     
@@ -1250,6 +1289,7 @@ int FMDBExecuteBulkSQLCallback(void *theBlockAsVoid, int columns, char **values,
     return b;
 }
 
+//开启一个推迟\延期事务
 - (BOOL)beginDeferredTransaction {
     
     BOOL b = [self executeUpdate:@"begin deferred transaction"];
@@ -1260,6 +1300,13 @@ int FMDBExecuteBulkSQLCallback(void *theBlockAsVoid, int columns, char **values,
     return b;
 }
 
+//想完全避免SQLITE_BUSY，唯一的办法就是确保对于同一个数据库某一个时刻仅仅存在一个数据库连接。这需要设置PRAGMA locking-mode为EXCLUSIVE（独占的）。http://blog.csdn.net/NorthCan/article/details/7245296
+
+// 开启一个独占的事务,完全避免 死锁
+//通过BEGIN EXCLUSIVE TRANSACTION命令开启一个独占式的事务，如果成功则在事务的执行过程中不会返回SQLITE_BUSY。不过BEGIN命令本身可能会执行失败并返回 SQLITE_BUSY
+//。BEGIN EXCLUSIVE的缺点是只有目前没有其他的数据库连接（包括只读事务）正在访问该数据库，它才会执行成功。而且一旦独占式的事务开始执行，它同样会锁住数据库，使其他的数据库连接（包括只读事务）无法访问该数据库。
+ //为了允许更多的并发访问，还有一种类型的事务——IMMEDIATE TRANSACTION（即时事务）。可以通过BEGIN IMMEDIATE TRANSACTION命令启动一个即时事务，如果成功则在事务执行的过程中通常只有执行到COMMIT语句时才会返回SQLITE_BUSY。不管是事务中的哪些命令（包括COMMIT），一旦遇到了SQLITE_BUSY，应用程序可以简单的重置语句然后等待并重试。BEGIN IMMEDIATE语句本身也有可能会遭遇SQLITE_BUSY，这时应用程序也是可以简单的重置BEGIN语句然后重试。与EXCLUSIVE TRANSACTION不同的是，如果存在其它的数据库连接正在读取（非写）数据库，这时候IMMEDIATE事务是可以启动的。一旦IMMEDIATE事务成功启动，则不允许其它数据库连接进行写入操作，但只读的数据库连接仍然可以访问数据库，除非IMMEDIATE事务正在强制修改数据库文件（通常是事务正在执行COMMIT操作）。使用IMMEDIATE事务不会发生死锁现象，所有的SQLITE_BUSY可以通过重试操作进行处理。
+
 - (BOOL)beginTransaction {
     
     BOOL b = [self executeUpdate:@"begin exclusive transaction"];
@@ -1269,6 +1316,9 @@ int FMDBExecuteBulkSQLCallback(void *theBlockAsVoid, int columns, char **values,
     
     return b;
 }
+
+
+
 
 - (BOOL)inTransaction {
     return _inTransaction;
@@ -1431,6 +1481,7 @@ void FMDBBlockSQLiteCallBackFunction(sqlite3_context *context, int argc, sqlite3
 
 - (void)close {
     if (_statement) {
+//        释放 _statement
         sqlite3_finalize(_statement);
         _statement = 0x00;
     }
@@ -1439,6 +1490,7 @@ void FMDBBlockSQLiteCallBackFunction(sqlite3_context *context, int argc, sqlite3
 }
 
 - (void)reset {
+    //重置 _statement
     if (_statement) {
         sqlite3_reset(_statement);
     }

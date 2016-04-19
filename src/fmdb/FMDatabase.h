@@ -79,18 +79,18 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
     
     sqlite3*            _db;
     NSString*           _databasePath;
-    BOOL                _logsErrors;
-    BOOL                _crashOnErrors;
-    BOOL                _traceExecution;
+    BOOL                _logsErrors;        //初始为yes
+    BOOL                _crashOnErrors;       // 初始为 no
+    BOOL                _traceExecution;    // 追溯执行,输出
     BOOL                _checkedOut;
-    BOOL                _shouldCacheStatements;
-    BOOL                _isExecutingStatement;
-    BOOL                _inTransaction;
-    NSTimeInterval      _maxBusyRetryTimeInterval;
+    BOOL                _shouldCacheStatements; // cache 
+    BOOL                _isExecutingStatement;      // 标记database是否正在被使用,这做法有点屌丝啊,为啥不用 sqlite_busy呢?
+    BOOL                _inTransaction;         // 是否开启了事务
+    NSTimeInterval      _maxBusyRetryTimeInterval;      // 初始为2
     NSTimeInterval      _startBusyRetryTime;
     
-    NSMutableDictionary *_cachedStatements;
-    NSMutableSet        *_openResultSets;
+    NSMutableDictionary *_cachedStatements;// FMStatement的集合
+    NSMutableSet        *_openResultSets;       // 初始化 放的是FMResultSet的value
     NSMutableSet        *_openFunctions;
 
     NSDateFormatter     *_dateFormat;
@@ -282,6 +282,7 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
  @see [`sqlite3_bind`](http://sqlite.org/c3ref/bind_blob.html)
  */
 
+// 执行sel语句 可变参数
 - (BOOL)executeUpdate:(NSString*)sql withErrorAndBindings:(NSError**)outErr, ...;
 
 /** Execute single update statement
@@ -343,6 +344,7 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
  There are two reasons why this distinction is important. First, the printf-style escape sequences can only be used where it is permissible to use a SQLite `?` placeholder. You can use it only for values in SQL statements, but not for table names or column names or any other non-value context. This method also cannot be used in conjunction with `pragma` statements and the like. Second, note the lack of quotation marks in the SQL. The `VALUES` clause was _not_ `VALUES ('%@')` (like you might have to do if you built a SQL statement using `NSString` method `stringWithFormat`), but rather simply `VALUES (%@)`.
  */
 
+// 第一个参数是sql语句,后面是参数值
 - (BOOL)executeUpdateWithFormat:(NSString *)format, ... NS_FORMAT_FUNCTION(1,2);
 
 /** Execute single update statement
@@ -363,6 +365,7 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
  @see lastErrorMessage
  */
 
+// sql语句,参数数组.
 - (BOOL)executeUpdate:(NSString*)sql withArgumentsInArray:(NSArray *)arguments;
 
 /** Execute single update statement
@@ -410,6 +413,7 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
  @see lastErrorMessage
 */
 
+// 使用字典,不用按照参数顺序.不像数组,必须一一对应.  字典要key和列名相同.
 - (BOOL)executeUpdate:(NSString*)sql withParameterDictionary:(NSDictionary *)arguments;
 
 
@@ -430,6 +434,9 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
  @see lastErrorMessage
  */
 
+// sql语句,和多参数
+
+//直接这样写,不需要arg_start 和arg_end么???
 - (BOOL)executeUpdate:(NSString*)sql withVAList: (va_list)args;
 
 /** Execute multiple SQL statements
@@ -465,6 +472,8 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
 
  */
 
+
+// 带有回调函数,去执行sel语句.
 - (BOOL)executeStatements:(NSString *)sql withResultBlock:(FMDBExecuteStatementsCallbackBlock)block;
 
 /** Last insert rowid
@@ -479,6 +488,8 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
 
  */
 
+// 调用sqlite3_last_insert_rowid ,最后一次插入的rowID 返回你前一次插入得位置
+
 - (sqlite_int64)lastInsertRowId;
 
 /** The number of rows changed by prior SQL statement.
@@ -490,6 +501,9 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
  @see [sqlite3_changes()](http://sqlite.org/c3ref/changes.html)
  
  */
+
+
+// 该函数返回最近执行的INSERT、UPDATE和DELETE语句所影响的数据行数。我们也可以通过执行C/C++函数sqlite3_changes()得到相同的结果。
 
 - (int)changes;
 
@@ -519,6 +533,7 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
  @note If you want to use this from Swift, please note that you must include `FMDatabaseVariadic.swift` in your project. Without that, you cannot use this method directly, and instead have to use methods such as `<executeQuery:withArgumentsInArray:>`.
  */
 
+// 返回resultSet
 - (FMResultSet *)executeQuery:(NSString*)sql, ...;
 
 /** Execute select statement
@@ -752,6 +767,8 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
  @warning You need to have purchased the sqlite encryption extensions for this method to work.
  */
 
+
+// sqlite3_rekey是变更密钥或给没有加密的数据库添加密钥或清空密钥，变更密钥或清空密钥前必须先正确执行 sqlite3_key。在正确执行 sqlite3_rekey 之后在 sqlite3_close 关闭数据库之前可以正常操作数据库，不需要再执行 sqlite3_key。
 - (BOOL)rekey:(NSString*)key;
 
 /** Set encryption key using `keyData`.
@@ -880,6 +897,11 @@ typedef int(^FMDBExecuteStatementsCallbackBlock)(NSDictionary *resultsDictionary
  @see releaseSavePointWithName:error:
  @see rollbackToSavePointWithName:error:
  */
+
+
+// savepoint savepoint_name
+//release savepoint savepoint_name；
+// 这个命令就是在事务语句之间创建一个保存点。rollback命令可以撤销一组事务操作，而保存点可以将大量事务操作划分为较小的，更易于管理的组。
 
 - (BOOL)startSavePointWithName:(NSString*)name error:(NSError**)outErr;
 

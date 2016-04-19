@@ -73,7 +73,8 @@ static const void * const kDispatchQueueSpecificKey = &kDispatchQueueSpecificKey
         
         _path = FMDBReturnRetained(aPath);
         
-        _queue = dispatch_queue_create([[NSString stringWithFormat:@"fmdb.%@", self] UTF8String], NULL);
+        // 第二个参数为null,默认生成concurrent queue 等价  DISPATCH_QUEUE_CONCURRENT
+        _queue = dispatch_queue_create([[NSString stringWithFormat:@"fmdb.%@", self] UTF8String],NULL);
         dispatch_queue_set_specific(_queue, kDispatchQueueSpecificKey, (__bridge void *)self, NULL);
         _openFlags = openFlags;
     }

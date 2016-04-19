@@ -161,6 +161,7 @@
  @param block The code to be run on the queue of `FMDatabaseQueue`
  */
 
+//  封装的课 回退的事务
 - (void)inTransaction:(void (^)(FMDatabase *db, BOOL *rollback))block;
 
 /** Synchronously perform database operations on queue, using deferred transactions.
